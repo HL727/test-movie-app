@@ -1,37 +1,40 @@
 import NextAuth from 'next-auth';
-import { PrismaAdapter } from '@auth/prisma-adapter';
-import { prisma } from '@/prisma';
 import Credentials from 'next-auth/providers/credentials';
-// Your own logic for dealing with plaintext password strings; be careful!
-// import { saltAndHashPassword } from '@/utils/password';
+import { prisma } from './prisma';
+import bcrypt from 'bcrypt';
+import { authConfig } from './auth.config';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  ...authConfig,
   providers: [
     Credentials({
-      // You can specify which fields should be submitted, by adding keys to the `credentials` object.
-      // e.g. domain, username, password, 2FA token, etc.
       credentials: {
-        email: {},
-        password: {},
+        email: { label: 'Email', type: 'text' },
+        password: { label: 'Password', type: 'password' },
       },
       authorize: async (credentials) => {
-        let user = null;
-
-        // logic to salt and hash password
-        // const pwHash = saltAndHashPassword(credentials.password);
-
-        // // logic to verify if the user exists
-        // user = await getUserFromDb(credentials.email, pwHash);
-
-        if (!user) {
-          // No user found, so this is their first attempt to login
-          // meaning this is also the place you could do registration
-          throw new Error('User not found.');
+        if (
+          !credentials ||
+          typeof credentials.email !== 'string' ||
+          typeof credentials.password !== 'string'
+        ) {
+          return null;
         }
 
-        // return user object with their profile data
-        return user;
+        let user = await prisma.user.findUnique({
+          where: {
+            email: credentials.email,
+          },
+        });
+
+        if (
+          user &&
+          (await bcrypt.compare(credentials.password, user.password))
+        ) {
+          return user;
+        }
+
+        return null;
       },
     }),
   ],
